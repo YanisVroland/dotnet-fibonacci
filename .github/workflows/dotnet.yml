@@ -43,20 +43,33 @@ jobs:
     secrets:
       DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
       DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
-  build:
-    #needs: tags
+  publish_docker:
+    needs: [ tags, build_docker ]
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v3
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v3
-      with:
-        dotnet-version: 8.0.100-preview.7.23376.3
-    - run: dotnet test /p:CollectCoverage=true /p:CoverletOutputFormat=opencover /p:CoverletOutput=./coverage/opencover.xml
-    - run: dotnet publish ./src/Leonardo.Web/Leonardo.Web.csproj --self-contained true --output ./win-x64/fibonacci -c Release -r win-x64 /p:PublishSingleFile=true /p:PublishTrimmed=true /p:PublishReadyToRun=true
-    - name: Upload WebApp1 Build Artifact
-      uses: actions/upload-artifact@v2
-      with:
-        name: Publish win-x64 Fibonacci
-        path: ./win-x64/fibonacci
+      - name: azure login
+        uses: azure/login@v1
+        with:
+          # az ad sp create-for-rbac --name "azure-admin" --role contributor --scopes /subscriptions/<subscription-id> --sdk-auth
+          creds: ${{secrets.AZURE_CREDENTIALS}}
+      - name: Deploy container
+        run: |
+          # https://learn.microsoft.com/en-us/cli/azure/container?view=azure-cli-latest#az-container-create()
+          az group create --name mon-resource-group --location northeurope
+          az container create --resource-group mon-resource-group --name fibonacci-yanis --dns-name-label fibonacci-yanis --image docker.io/yanisvroland/fibonacci:${{ needs.tags.outputs.new_version }} --ports 8080
+  build:
+    needs: tags
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: 8.0.100-preview.7.23376.3
+      - run: dotnet test /p:CollectCoverage=true /p:CoverletOutputFormat=opencover /p:CoverletOutput=./coverage/opencover.xml
+      - run: dotnet publish ./src/Leonardo.Web/Leonardo.Web.csproj --self-contained true --output ./win-x64/fibonacci -c Release -r win-x64 /p:PublishSingleFile=true /p:PublishTrimmed=true /p:PublishReadyToRun=true
+      - name: Upload WebApp1 Build Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: Publish win-x64 Fibonacci
+          path: ./win-x64/fibonacci
